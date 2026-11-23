@@ -26,7 +26,7 @@ reopened, and by hand for one issue (Actions → label-triage → Run workflow).
 | `token` | `${{ github.token }}` | reads issues and labels; adds labels unless dry run (`issues: write`) |
 
 Output `labels`: JSON array of the labels added (or that would be).
-The first run downloads Ollama and the model (about 3 GB) into the Actions cache; later runs restore it.
+Each run downloads Ollama and the model (about 3 GB, under a minute): no Actions cache, restoring it was slower.
 
 ## How it decides
 

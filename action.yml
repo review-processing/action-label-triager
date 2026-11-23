@@ -97,11 +97,19 @@ runs:
           echo "skip=true" >> "$GITHUB_OUTPUT"
         fi
 
-    # The only place naming the Ollama release: the cache key follows it. d3 needs Ollama 0.40.9 or later.
-    - name: pins
-      id: pins
+    - name: install node
+      if: steps.gate.outputs.skip != 'true'
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 24 # runs triage.ts as it is: Node strips the types
+
+    # Downloaded at each run, no Actions cache: restoring ~4 GB from the cache was slower than downloading them.
+    # d3 needs Ollama 0.40.9 or later.
+    - name: install ollama and pull the model
       if: steps.gate.outputs.skip != 'true'
       shell: bash
+      env:
+        MODEL: ${{ inputs.model }}
       run: |
         version=v0.40.16
         case "$RUNNER_OS-$RUNNER_ARCH" in
@@ -109,42 +117,11 @@ runs:
           Linux-X64)   asset=ollama-linux-amd64.tar.zst sha256=87bfafb2acbc89b2e6a1be0a9043de6aa75fb450696f86bc426e65fc448f788d ;;
           *) echo "::error::runs on Linux runners only (ubuntu-26.04-arm is the one measured)"; exit 1 ;;
         esac
-        { echo "ollama-version=$version"; echo "asset=$asset"; echo "sha256=$sha256"; } >> "$GITHUB_OUTPUT"
-
-    - name: install node
-      if: steps.gate.outputs.skip != 'true'
-      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-      with:
-        node-version: 24 # runs triage.ts as it is: Node strips the types
-
-    - name: restore ollama and the model
-      id: cache
-      if: steps.gate.outputs.skip != 'true'
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ${{ runner.temp }}/label-triager-tools
-        key: label-triager-${{ runner.os }}-${{ runner.arch }}-ollama-${{ steps.pins.outputs.ollama-version }}-${{ inputs.model }}
-
-    - name: download ollama
-      if: steps.gate.outputs.skip != 'true' && steps.cache.outputs.cache-hit != 'true'
-      shell: bash
-      env:
-        VERSION: ${{ steps.pins.outputs.ollama-version }}
-        ASSET: ${{ steps.pins.outputs.asset }}
-        SHA256: ${{ steps.pins.outputs.sha256 }}
-      run: |
         cd "$LABEL_TRIAGER_TOOLS"
-        curl -fsSL --retry 3 -o "$ASSET" "https://github.com/ollama/ollama/releases/download/$VERSION/$ASSET"
-        echo "$SHA256  $ASSET" | sha256sum -c -
-        rm -rf ollama && mkdir ollama && tar --zstd -xf "$ASSET" -C ollama && rm "$ASSET"
-
-    - name: start ollama and pull the model
-      if: steps.gate.outputs.skip != 'true'
-      shell: bash
-      env:
-        MODEL: ${{ inputs.model }}
-      run: |
-        ollama=$(find "$LABEL_TRIAGER_TOOLS/ollama" -type f -name ollama | head -1)
+        curl -fsSL --retry 3 -o "$asset" "https://github.com/ollama/ollama/releases/download/$version/$asset"
+        echo "$sha256  $asset" | sha256sum -c -
+        mkdir -p ollama && tar --zstd -xf "$asset" -C ollama && rm "$asset"
+        ollama=$(find ollama -type f -name ollama | head -1)
         [ -n "$ollama" ] || { echo "::error::ollama binary not found"; exit 1; }
         chmod +x "$ollama"
         export OLLAMA_MODELS="$LABEL_TRIAGER_TOOLS/models"
@@ -152,14 +129,6 @@ runs:
         for _ in $(seq 60); do curl -sf http://127.0.0.1:11434/api/version > /dev/null && break; sleep 1; done
         "$ollama" pull "$MODEL" > "$LABEL_TRIAGER_OUT/ollama-pull.log" 2>&1 || { tail -n 20 "$LABEL_TRIAGER_OUT/ollama-pull.log"; exit 1; }
         echo "ready in ${SECONDS}s"
-
-    # Saved before any issue text is read.
-    - name: save ollama and the model
-      if: steps.gate.outputs.skip != 'true' && steps.cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ${{ runner.temp }}/label-triager-tools
-        key: ${{ steps.cache.outputs.cache-primary-key }}
 
     # Read only: the issue, the labels and the last 150 issues (examples) of labels-repo, the folder -> domain map.
     - name: fetch
