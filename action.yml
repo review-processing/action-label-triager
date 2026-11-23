@@ -211,7 +211,28 @@ runs:
             "| label | probability |", "|---|---|",
             (.scores | to_entries[] | "| \(.key | code) | \(if .value == null then "fallback" else "\(.value * 100 | round)%" end) |"),
             "",
-            "Already on the issue: " + ([$i.labels[].name | code] | join(", ") | if . == "" then "none" else . end)
+            "Already on the issue: " + ([$i.labels[].name | code] | join(", ") | if . == "" then "none" else . end),
+            "",
+            "<details><summary>Candidates: what the model scored (confidence: domain \(.explain.confidence.domain * 100 | round)%, area \(.explain.confidence.area * 100 | round)%)</summary>",
+            "",
+            "| domain | % | area | % |", "|---|---|---|---|",
+            ((.probabilities.domain | to_entries[:8]) as $d | (.probabilities.area | to_entries[:8]) as $a | .labels as $picked
+              | range(0; 8) as $n
+              | def cell($e): if $e == null then "| |" else ($e.key | code | if ($picked | index($e.key)) then "**" + . + "**" else . end) + " | \($e.value * 100 | round)%" end;
+              "| " + cell($d[$n]) + " | " + cell($a[$n]) + " |"),
+            "",
+            (.explain.areas[:5][] | "- area \(.label | code) \(.p * 100 | round)%: \(.why)"),
+            (if (.explain.held | length) > 0 then "- not offered (the issue does not name that extension): " + ([.explain.held[] | code] | join(", ")) else empty end),
+            (if (.explain.paths | length) > 0 then "- paths named in the issue: " + ([.explain.paths[] | (.path | code) + " → " + .domain] | join(", ")) else empty end),
+            "",
+            "</details>",
+            "",
+            "<details><summary>Examples: the \(.explain.similar | length) most similar past issues given to the model</summary>",
+            "",
+            "| similarity | issue | labels |", "|---|---|---|",
+            (.explain.similar[] | "| \(.score * 100 | round)% | \(.number | tostring | code) \(.title | code) | \([.labels[] | code] | join(", ")) |"),
+            "",
+            "</details>"
         ' result.json >> "$GITHUB_STEP_SUMMARY"
 
     - name: add the labels

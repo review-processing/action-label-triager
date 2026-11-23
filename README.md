@@ -44,6 +44,10 @@ The first run downloads Ollama and the model (about 3 GB) into the Actions cache
    is offered only when the issue names that extension. What each label means to the model is its
    description on the labels page of the repository: edit it there to change the triage.
 
+The model writes no reasoning: it scores options. What led to each pick is shown instead, in the log of the
+`decide` step (folded groups: examples, paths, extension labels held back, every option with its %, why each
+area was kept or dropped), in the run summary (Candidates, Examples), and in `result.json` of the artifact.
+
 The model runs with no tool and no token; the issue text is only ever data for it. The worst an issue
 can do is get a wrong label from the list.
 

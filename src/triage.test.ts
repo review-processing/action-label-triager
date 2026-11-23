@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { examples, folderHints, offered, pick } from '../triage.ts';
+import { areaReasons, examples, folderHints, offered, pick } from '../triage.ts';
 import { toIssue, toLabels, toMappings } from './lib.ts';
 
 test('one domain, areas only above 0.3 and when none does not win', () => {
@@ -37,4 +37,11 @@ test('examples: triaged issues, older ones only when in the same repository', ()
   const issue = toIssue({ number: 10, title: '', body: '', createdAt: '', labels: [] });
   expect(examples(raw, issue, true).map(i => i.number)).toEqual([5]);
   expect(examples(raw, issue, false).map(i => i.number)).toEqual([5, 50]);
+});
+
+test('area reasons: kept, below 30%, already 2, none wins', () => {
+  const reasons = (area: Record<string, number>) => areaReasons(area).map(a => `${a.label}:${a.why}`);
+  expect(reasons({ none: 0.05, 'area/x': 0.4, 'area/y': 0.35, 'area/z': 0.32, 'area/w': 0.1 }))
+    .toEqual(['area/x:kept', 'area/y:kept', 'area/z:already 2 areas', 'area/w:below 30%']);
+  expect(reasons({ none: 0.55, 'area/x': 0.45 })).toEqual(['area/x:"none" wins (55%)']);
 });
