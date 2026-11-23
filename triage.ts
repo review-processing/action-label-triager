@@ -182,7 +182,7 @@ if (import.meta.main) {
     // the same, readable, in the log (stderr: stdout is the JSON)
     const pct = (x: number): string => `${Math.round(x * 100)}%`.padStart(4);
     const group = (title: string, lines: string[]): void => console.error(`::group::${title}\n${lines.join('\n') || '(none)'}\n::endgroup::`);
-    group(`Similar past issues given as examples (${explain.similar.length})`, explain.similar.map(s => `${s.score.toFixed(2)}  ${s.number}  ${s.title}  =>  ${s.labels.map(real).join(', ')}`));
+    group(`Similar past issues given as examples (${explain.similar.length})`, explain.similar.map(s => `${s.score.toFixed(2)}  https://github.com/${arg(argv, 'repo', REPO)}/issues/${s.number}  ${s.title}  =>  ${s.labels.map(real).join(', ')}`));
     group(`Paths named in the issue (${explain.paths.length})`, explain.paths.map(h => `${h.path} -> ${h.domain}`));
     group(`Extension labels not offered: the issue does not name them (${explain.held.length})`, explain.held.map(real));
     group(`domain: ${Object.keys(result.probabilities.domain).length} options, confidence ${pct(explain.confidence.domain ?? 0).trim()}`, sorted(result.probabilities.domain).map(([k, v]) => `${pct(v)}  ${real(k)}`));

@@ -170,7 +170,7 @@ runs:
         DRY_RUN: ${{ inputs.dry-run }}
         MODEL: ${{ inputs.model }}
       run: |
-        jq -r --arg dry "$DRY_RUN" --arg model "$MODEL" --slurpfile issue issue.json '
+        jq -r --arg dry "$DRY_RUN" --arg model "$MODEL" --arg repo "$LABEL_TRIAGER_LABELS_REPO" --slurpfile issue issue.json '
           def code: "`" + (tostring | gsub("`"; "'"'"'")) + "`";
           ($issue[0]) as $i
           | "### Labels for issue \($i.number) " + ($i.title | code),
@@ -199,7 +199,7 @@ runs:
             "<details><summary>Examples: the \(.explain.similar | length) most similar past issues given to the model</summary>",
             "",
             "| similarity | issue | labels |", "|---|---|---|",
-            (.explain.similar[] | "| \(.score * 100 | round)% | \(.number | tostring | code) \(.title | code) | \([.labels[] | code] | join(", ")) |"),
+            (.explain.similar[] | "| \(.score * 100 | round)% | [\(.number) \(.title | gsub("[\\[\\]|`<>]"; ""))](https://github.com/\($repo)/issues/\(.number)) | \([.labels[] | code] | join(", ")) |"),
             "",
             "</details>"
         ' result.json >> "$GITHUB_STEP_SUMMARY"
