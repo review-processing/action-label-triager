@@ -1,5 +1,5 @@
 // Replay collected issues through triage.ts and compare with the labels they really got.
-//   bun eval.ts [--model d3:2b] [--url u] [--test 100] [--only n]
+//   bun eval.ts [--model d3:2b] [--url u] [--test 100] [--only n] [--pool n]
 //   bun eval.ts --compare
 // Test set = the newest `--test` issues; each one only sees older issues as examples. Resumable.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -47,13 +47,15 @@ const o = options(argv);
 const num = (name: string, fallback: number): number => { const i = argv.indexOf(`--${name}`); return i >= 0 ? Number(argv[i + 1]) : fallback; };
 const labels = loadLabels(), issues = loadIssues(), mappings = loadMappings();
 const test = issues.slice(-num('test', 100)).slice(0, num('only', Infinity));
-const name = o.model.replace(/[^\w.-]/g, '_');
+// --pool n: only the n newest older issues as examples (0: none)
+const pool = num('pool', Infinity);
+const name = o.model.replace(/[^\w.-]/g, '_') + (pool === Infinity ? '' : `-pool${pool}`);
 const file = join(RUNS, `${name}.jsonl`);
 const done = new Set(existsSync(file) ? read(file).map(l => l.issue) : []);
 
 for (const [n, issue] of test.entries()) {
   if (done.has(issue.number)) continue;
-  const { labels: predicted, stats } = await triage(issue, { ...o, labels, mappings, pool: issues.filter(p => p.number < issue.number) });
+  const { labels: predicted, stats } = await triage(issue, { ...o, labels, mappings, pool: pool ? issues.filter(p => p.number < issue.number).slice(-pool) : [] });
   appendFileSync(file, JSON.stringify({ issue: issue.number, title: issue.title, expected: issue.labels, predicted, ...stats }) + '\n');
   const ok = predicted.join() === issue.labels.join() ? '=' : predicted.some(l => issue.labels.includes(l)) ? '~' : 'x';
   console.log(`${n + 1}/${test.length} ${ok} ${issue.number} ${stats.seconds.toFixed(1)}s  got ${predicted.join(', ') || '-'}  want ${issue.labels.join(', ')}`);

@@ -11,7 +11,7 @@ test('one domain, areas only above 0.3 and when none does not win', () => {
 test('a specific extension label only when the issue names it', () => {
   const labels = toLabels([{ name: 'area/extension/podman 🦭', description: '' }, { name: 'area/extensions/compose 🎹', description: '' }, { name: 'area/renderer 📈', description: '' }]);
   expect(offered(labels, 'The container list does not refresh')).toEqual(['area/renderer']);
-  expect(offered(labels, 'podman machine fails to start, docker compose up')).toEqual(['area/extension/podman', 'area/extensions/compose', 'area/renderer']);
+  expect(offered(labels, 'podman machine fails to start, docker compose up')).toEqual(['area/renderer', 'area/extension/podman', 'area/extensions/compose']);
 });
 
 test('folder hints: paths map to their domain, prose is not a path', () => {

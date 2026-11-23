@@ -155,7 +155,7 @@ runs:
         path: ${{ runner.temp }}/label-triager-tools
         key: ${{ steps.cache.outputs.cache-primary-key }}
 
-    # Read only: the issue, the labels of the repository, the last issues (examples), the folder -> domain map.
+    # Read only: the issue, the labels of the repository, the last 150 issues (examples), the folder -> domain map.
     - name: fetch
       if: steps.gate.outputs.skip != 'true'
       shell: bash
@@ -168,7 +168,8 @@ runs:
         fields=number,title,body,labels,createdAt
         gh issue view "$ISSUE" -R "$REPO" --json "$fields" > issue.json
         gh label list -R "$REPO" --limit 500 --json name,description > labels.json
-        gh issue list -R "$REPO" --state all --limit 500 --json "$fields" > issues.json
+        # examples: ~100 triaged issues; 50 or 100 score as well as 320 in the eval, none loses a third of the areas
+        gh issue list -R "$REPO" --state all --limit 150 --json "$fields" > issues.json
         gh api repos/issue-management/pdmn-dsktp-app/contents/folder-domains.json --jq .content | base64 -d > folder-domains.json
 
     - name: decide

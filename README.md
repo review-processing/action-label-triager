@@ -29,7 +29,8 @@ The first run downloads Ollama and the model (about 3 GB) into the Actions cache
 
 ## How it decides
 
-1. The action fetches, read-only: the issue, the labels of the repository, the last 500 issues, and
+1. The action fetches, read-only: the issue, the labels of the repository, the last 150 issues (about 100 triaged ones, the
+   examples), and
    [`folder-domains.json`](https://github.com/issue-management/pdmn-dsktp-app/blob/main/folder-domains.json)
    (which folder of the code belongs to which domain).
 2. `triage.ts` (run by Node 24 as it is, no build) asks the model two choice questions with the
