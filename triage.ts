@@ -83,7 +83,7 @@ export async function triage(issue: Issue, o: Options): Promise<Result> {
   const started = performance.now();
   const all = offered(o.labels, issue.title + '\n' + issue.body);
   const domains = all.filter(k => k.startsWith('domain/'));
-  // the API takes 26 options: "none" + the 25 areas most used in older issues (ties: descriptions.json order)
+  // the API takes 26 options: "none" + the 25 areas most used in older issues
   const used = (l: string): number => o.pool.filter(p => p.labels.includes(l)).length;
   const areas = all.filter(k => k.startsWith('area/')).sort((a, b) => used(b) - used(a)).slice(0, 25);
   const desc = (keys: string[]): Record<string, string> => Object.fromEntries(keys.map(k => [k, o.labels[k]?.description || k]));

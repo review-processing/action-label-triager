@@ -40,7 +40,8 @@ The first run downloads Ollama and the model (about 3 GB) into the Actions cache
    - which `area/*`, or none (areas scored 30% or more, at most 2).
 3. Only labels of the repository can come out: the model scores the options it is given and
    writes no text. A specific extension label (`area/extension/podman`, `area/extensions/compose`...)
-   is offered only when the issue names that extension. Label descriptions: `descriptions.json`.
+   is offered only when the issue names that extension. What each label means to the model is its
+   description on the labels page of the repository: edit it there to change the triage.
 
 The model runs with no tool and no token; the issue text is only ever data for it. The worst an issue
 can do is get a wrong label from the list.
