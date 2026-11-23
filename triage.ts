@@ -1,5 +1,5 @@
 // Pick 1 domain/* and 0 to 2 area/* labels for one issue, with a d3 decision model served by ollama.
-//   node triage.ts --issue issue.json --labels labels.json --issues issues.json --folders folder-domains.json [--repo o/r] [--model d3:2b] [--url http://127.0.0.1:11434]
+//   node triage.ts --issue issue.json --labels labels.json --issues issues.json --folders folder-domains.json [--repo o/r] [--same-repo false] [--model d3:2b] [--url http://127.0.0.1:11434]
 //     (the files are raw `gh ... --json` output, see action.yml) -> prints { labels, probabilities, seconds }
 //   node triage.ts <issue number>   an issue of .local/data (bun collect.ts), against the rest of .local/data
 // No GitHub access, no network except ollama.
@@ -104,6 +104,11 @@ export async function triage(issue: Issue, o: Options): Promise<Result> {
   return { labels: labels.sort(), probabilities, stats };
 }
 
+// examples: triaged issues (they have a domain label), older than the issue when both come from the same repository
+// (--same-repo false: the issue is in another repository, its number says nothing about the examples' age)
+export const examples = (raw: RawIssue[], issue: Issue, sameRepo: boolean): Issue[] =>
+  raw.map(toIssue).filter(p => (!sameRepo || p.number < issue.number) && p.labels.some(l => l.startsWith('domain/')));
+
 export const arg = (argv: string[], name: string, fallback: string): string => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : fallback; };
 export const options = (argv: string[]): Pick<Options, 'model' | 'url'> => ({
   model: arg(argv, 'model', process.env.MODEL ?? 'd3:2b'),
@@ -114,14 +119,13 @@ if (import.meta.main) {
   const argv = process.argv.slice(2);
   const read = (name: string): any => JSON.parse(readFileSync(arg(argv, name, ''), 'utf8'));
   if (argv.includes('--help') || !argv.length) {
-    console.log('usage: node triage.ts --issue issue.json --labels labels.json --issues issues.json --folders folder-domains.json [--repo o/r] [--model d3:2b] [--url u]\n       node triage.ts <issue number of .local/data>');
+    console.log('usage: node triage.ts --issue issue.json --labels labels.json --issues issues.json --folders folder-domains.json [--repo o/r] [--same-repo false] [--model d3:2b] [--url u]\n       node triage.ts <issue number of .local/data>');
     process.exit(argv.length ? 0 : 2);
   }
   if (argv.includes('--issue')) {
     const rawIssues: RawIssue[] = read('issues');
     const issue = toIssue(read('issue'));
-    // examples: older issues that were triaged (they have a domain label)
-    const pool = rawIssues.map(toIssue).filter(p => p.number < issue.number && p.labels.some(l => l.startsWith('domain/')));
+    const pool = examples(rawIssues, issue, arg(argv, 'same-repo', 'true') !== 'false');
     const o: Options = { ...options(argv), labels: toLabels(read('labels')), pool, mappings: toMappings(read('folders'), arg(argv, 'repo', REPO)) };
     const result = await triage(issue, o);
     // back to the real label names ("area/renderer 📈"): the one used most on the fetched issues

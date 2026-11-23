@@ -19,6 +19,7 @@ reopened, and by hand for one issue (Actions → label-triage → Run workflow).
 |---|---|---|
 | `issue` | (required) | issue number |
 | `repo` | `${{ github.repository }}` | repository of the issue |
+| `labels-repo` | same as `repo` | repository whose labels, descriptions and past issues are used; labels missing in `repo` are created with its color and description |
 | `dry-run` | `'false'` | only report the labels |
 | `force` | `'false'` | triage even with a `domain/*` label |
 | `model` | `d3:2b` | Ollama decision model |
