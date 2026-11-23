@@ -1,0 +1,56 @@
+#
+# Copyright (C) 2026 Red Hat, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+# Runs the action from this repository on an issue of another repository, in dry run: reads only.
+# Measures the time on the runner and fills the cache of Ollama and the model.
+
+name: test
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number
+        required: true
+        type: string
+      repo:
+        description: Repository of the issue
+        type: string
+        default: podman-desktop/podman-desktop
+      model:
+        description: Ollama decision model
+        type: string
+        default: d3:2b
+
+permissions: {}
+
+jobs:
+  triage:
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./
+        with:
+          issue: ${{ inputs.issue }}
+          repo: ${{ inputs.repo }}
+          model: ${{ inputs.model }}
+          dry-run: 'true'
+          force: 'true'

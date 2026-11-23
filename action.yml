@@ -1,0 +1,229 @@
+#
+# Copyright (C) 2026 Red Hat, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+# Adds 1 domain/* and 0 to 2 area/* labels to an issue, picked by a local decision model (d3, Ollama, CPU).
+# Nothing but the labels of the repository can come out of the model: it answers choice questions.
+#
+# Caller (see examples/label-triage.yaml):
+#   jobs:
+#     triage:
+#       runs-on: ubuntu-26.04-arm
+#       permissions: { contents: read, issues: write }
+#       steps:
+#         - uses: review-processing/action-label-triager@<sha>
+#           with: { issue: "${{ github.event.issue.number }}", dry-run: 'false' }
+
+name: label triager
+description: Pick the domain/* and area/* labels of an issue with a local d3 decision model, and add them.
+
+inputs:
+  issue:
+    description: Issue number
+    required: true
+  repo:
+    description: Repository of the issue
+    default: ${{ github.repository }}
+  dry-run:
+    description: Only report the labels in the run summary, add nothing
+    default: 'false'
+  force:
+    description: Triage even if the issue already has a domain/* label
+    default: 'false'
+  model:
+    description: Ollama decision model
+    default: d3:2b
+  token:
+    description: Token that reads the repository issues and labels (and adds labels unless dry-run)
+    default: ${{ github.token }}
+
+outputs:
+  labels:
+    description: JSON array of the labels picked (empty when skipped)
+    value: ${{ steps.decide.outputs.labels }}
+
+runs:
+  using: composite
+  steps:
+    # Every input goes through env, never into a script.
+    - name: check inputs
+      shell: bash
+      env:
+        ISSUE: ${{ inputs.issue }}
+        REPO: ${{ inputs.repo }}
+        MODEL: ${{ inputs.model }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        FORCE: ${{ inputs.force }}
+      run: |
+        [[ "$ISSUE" =~ ^[0-9]+$ ]] || { echo "::error::issue must be a number"; exit 1; }
+        [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::bad repo"; exit 1; }
+        [[ "$MODEL" =~ ^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?$ ]] || { echo "::error::bad model"; exit 1; }
+        [[ "$DRY_RUN" =~ ^(true|false)$ && "$FORCE" =~ ^(true|false)$ ]] || { echo "::error::dry-run and force are true or false"; exit 1; }
+        mkdir -p "$RUNNER_TEMP/label-triager" "$RUNNER_TEMP/label-triager-tools"
+        echo "LABEL_TRIAGER_OUT=$RUNNER_TEMP/label-triager" >> "$GITHUB_ENV"
+        echo "LABEL_TRIAGER_TOOLS=$RUNNER_TEMP/label-triager-tools" >> "$GITHUB_ENV"
+
+    # Before the model is set up: an issue that is already triaged costs a few seconds.
+    - name: already triaged?
+      id: gate
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        ISSUE: ${{ inputs.issue }}
+        REPO: ${{ inputs.repo }}
+        FORCE: ${{ inputs.force }}
+      run: |
+        domains=$(gh issue view "$ISSUE" -R "$REPO" --json labels --jq '[.labels[].name | select(startswith("domain/"))] | join(", ")')
+        if [ -n "$domains" ] && [ "$FORCE" != true ]; then
+          echo "::notice::issue $ISSUE already has $domains: nothing to do (force: true to triage it anyway)"
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    # The only place naming the Ollama release: the cache key follows it. d3 needs Ollama 0.40.9 or later.
+    - name: pins
+      id: pins
+      if: steps.gate.outputs.skip != 'true'
+      shell: bash
+      run: |
+        version=v0.40.16
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-ARM64) asset=ollama-linux-arm64.tar.zst sha256=e45b8e6dcb86cb9f3057396351655079c9a4879b4ced2678c9350d375dcbc224 ;;
+          Linux-X64)   asset=ollama-linux-amd64.tar.zst sha256=87bfafb2acbc89b2e6a1be0a9043de6aa75fb450696f86bc426e65fc448f788d ;;
+          *) echo "::error::runs on Linux runners only (ubuntu-26.04-arm is the one measured)"; exit 1 ;;
+        esac
+        { echo "ollama-version=$version"; echo "asset=$asset"; echo "sha256=$sha256"; } >> "$GITHUB_OUTPUT"
+
+    - name: install node
+      if: steps.gate.outputs.skip != 'true'
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 24 # runs triage.ts as it is: Node strips the types
+
+    - name: restore ollama and the model
+      id: cache
+      if: steps.gate.outputs.skip != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/label-triager-tools
+        key: label-triager-${{ runner.os }}-${{ runner.arch }}-ollama-${{ steps.pins.outputs.ollama-version }}-${{ inputs.model }}
+
+    - name: download ollama
+      if: steps.gate.outputs.skip != 'true' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ steps.pins.outputs.ollama-version }}
+        ASSET: ${{ steps.pins.outputs.asset }}
+        SHA256: ${{ steps.pins.outputs.sha256 }}
+      run: |
+        cd "$LABEL_TRIAGER_TOOLS"
+        curl -fsSL --retry 3 -o "$ASSET" "https://github.com/ollama/ollama/releases/download/$VERSION/$ASSET"
+        echo "$SHA256  $ASSET" | sha256sum -c -
+        rm -rf ollama && mkdir ollama && tar --zstd -xf "$ASSET" -C ollama && rm "$ASSET"
+
+    - name: start ollama and pull the model
+      if: steps.gate.outputs.skip != 'true'
+      shell: bash
+      env:
+        MODEL: ${{ inputs.model }}
+      run: |
+        ollama=$(find "$LABEL_TRIAGER_TOOLS/ollama" -type f -name ollama | head -1)
+        [ -n "$ollama" ] || { echo "::error::ollama binary not found"; exit 1; }
+        chmod +x "$ollama"
+        export OLLAMA_MODELS="$LABEL_TRIAGER_TOOLS/models"
+        nohup "$ollama" serve > "$LABEL_TRIAGER_OUT/ollama.log" 2>&1 &
+        for _ in $(seq 60); do curl -sf http://127.0.0.1:11434/api/version > /dev/null && break; sleep 1; done
+        "$ollama" pull "$MODEL" > "$LABEL_TRIAGER_OUT/ollama-pull.log" 2>&1 || { tail -n 20 "$LABEL_TRIAGER_OUT/ollama-pull.log"; exit 1; }
+        echo "ready in ${SECONDS}s"
+
+    # Saved before any issue text is read.
+    - name: save ollama and the model
+      if: steps.gate.outputs.skip != 'true' && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/label-triager-tools
+        key: ${{ steps.cache.outputs.cache-primary-key }}
+
+    # Read only: the issue, the labels of the repository, the last issues (examples), the folder -> domain map.
+    - name: fetch
+      if: steps.gate.outputs.skip != 'true'
+      shell: bash
+      working-directory: ${{ runner.temp }}/label-triager
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        ISSUE: ${{ inputs.issue }}
+        REPO: ${{ inputs.repo }}
+      run: |
+        fields=number,title,body,labels,createdAt
+        gh issue view "$ISSUE" -R "$REPO" --json "$fields" > issue.json
+        gh label list -R "$REPO" --limit 500 --json name,description > labels.json
+        gh issue list -R "$REPO" --state all --limit 500 --json "$fields" > issues.json
+        gh api repos/issue-management/pdmn-dsktp-app/contents/folder-domains.json --jq .content | base64 -d > folder-domains.json
+
+    - name: decide
+      id: decide
+      if: steps.gate.outputs.skip != 'true'
+      shell: bash
+      working-directory: ${{ runner.temp }}/label-triager
+      env:
+        REPO: ${{ inputs.repo }}
+        MODEL: ${{ inputs.model }}
+      run: |
+        node "$GITHUB_ACTION_PATH/triage.ts" --issue issue.json --labels labels.json --issues issues.json --folders folder-domains.json \
+          --repo "$REPO" --model "$MODEL" > result.json
+        echo "labels=$(jq -c .labels result.json)" >> "$GITHUB_OUTPUT"
+
+    # Shown as text: no issue text in the summary, only the title in a code span.
+    - name: summary
+      if: steps.gate.outputs.skip != 'true'
+      shell: bash
+      working-directory: ${{ runner.temp }}/label-triager
+      env:
+        DRY_RUN: ${{ inputs.dry-run }}
+        MODEL: ${{ inputs.model }}
+      run: |
+        jq -r --arg dry "$DRY_RUN" --arg model "$MODEL" --slurpfile issue issue.json '
+          def code: "`" + (tostring | gsub("`"; "'"'"'")) + "`";
+          ($issue[0]) as $i
+          | "### Labels for issue \($i.number) " + ($i.title | code),
+            "",
+            (if $dry == "true" then "Dry run: nothing added." else "Added." end) + " Model \($model), \(.seconds * 10 | round / 10) s.",
+            "",
+            "| label | probability |", "|---|---|",
+            (.scores | to_entries[] | "| \(.key | code) | \(if .value == null then "fallback" else "\(.value * 100 | round)%" end) |"),
+            "",
+            "Already on the issue: " + ([$i.labels[].name | code] | join(", ") | if . == "" then "none" else . end)
+        ' result.json >> "$GITHUB_STEP_SUMMARY"
+
+    - name: add the labels
+      if: steps.gate.outputs.skip != 'true' && inputs.dry-run != 'true'
+      shell: bash
+      working-directory: ${{ runner.temp }}/label-triager
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        ISSUE: ${{ inputs.issue }}
+        REPO: ${{ inputs.repo }}
+      run: |
+        # only adds, never removes
+        args=()
+        while IFS= read -r label; do args+=(--add-label "$label"); done < <(jq -r '.labels[]' result.json)
+        [ "${#args[@]}" -eq 0 ] || gh issue edit "$ISSUE" -R "$REPO" "${args[@]}"
+
+    - name: upload
+      if: always() && steps.gate.outputs.skip != 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: label-triager
+        path: ${{ runner.temp }}/label-triager
+        retention-days: 7

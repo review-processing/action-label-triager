@@ -1,0 +1,11 @@
+{
+  "name": "action-label-triager",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test src",
+    "collect": "bun collect.ts",
+    "eval": "bun eval.ts",
+    "report": "bun report.ts"
+  }
+}
